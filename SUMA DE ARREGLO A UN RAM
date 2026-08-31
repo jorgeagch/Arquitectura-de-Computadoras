@@ -1,38 +1,19 @@
 #include <stdio.h>
-#define TAMANO 5
 
-int sumar_arreglo_ram(const int *arreglo, int tamano) {
+int main(void) {
+    int arreglo[5] = {10, 20, 30, 40, 50};
     int suma = 0;
 
     __asm__ (
-        "movl $0, %%ecx\n\t"        // %%ecx = contador (i = 0)
-        "movl $0, %%eax\n\t"        // %%eax = acumulador de la suma (suma = 0)
-        "bucle_suma:\n\t"
-        "cmpl %[tam], %%ecx\n\t"    // Compara i con el tamaño del arreglo
-        "jge fin_suma\n\t"          // Si i >= tamano, salir del bucle
-        "addl (%[arr], %%rcx, 4), %%eax\n\t" // eax += arreglo[i] (lectura directa de RAM)
-        "incl %%ecx\n\t"            // i++
-        "jmp bucle_suma\n\t"        // Volver al inicio del bucle
-        "fin_suma:\n\t"
-        : "=a" (suma)               // Salida: el resultado final queda en %%eax (mapeado a suma)
-        : [arr] "r" (arreglo),      // Entrada: puntero a la dirección base en RAM
-          [tam] "r" (tamano)        // Entrada: número de elementos
-        : "%rcx", "memory"          // Registros modificados y lectura de memoria
+        "movl 0(%1), %%eax\n\t"
+        "addl 4(%1), %%eax\n\t"
+        "addl 8(%1), %%eax\n\t"
+        "addl 12(%1), %%eax\n\t"
+        "addl 16(%1), %%eax\n\t"
+        : "=a" (suma)
+        : "r" (arreglo)
     );
 
-    return suma;
-}
-
-int main() {
-    int datos[TAMANO] = {10, 25, 5, 40, 20}; // Arreglo almacenado en memoria RAM
-
-    int total = sumar_arreglo_ram(datos, TAMANO);
-
-    printf("Elementos del arreglo en RAM: ");
-    for (int i = 0; i < TAMANO; i++) {
-        printf("[%d] ", datos[i]);
-    }
-    printf("\nSuma total calculada en Assembler: %d\n", total);
-
+    printf("Suma: %d\n", suma);
     return 0;
 }
