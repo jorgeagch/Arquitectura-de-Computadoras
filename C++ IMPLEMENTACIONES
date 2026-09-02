@@ -1,0 +1,62 @@
+#include <iostream>
+#include <fstream>
+#include <cstring>
+
+using namespace std;
+
+int main() {
+    // 1. Simular memoria secundaria: Generar un archivo binario con 1000 elementos
+    ofstream archivoSalida("memoria_secundaria.bin", ios::binary);
+    for (int i = 0; i < 1000; i++) {
+        int valor = i + 1; // Valores de 1 a 1000
+        archivoSalida.write(reinterpret_cast<char*>(&valor), sizeof(int));
+    }
+    archivoSalida.close();
+
+    // Leer el arreglo de 1000 elementos desde la memoria secundaria
+    int arreglo_original[1000];
+    ifstream archivoEntrada("memoria_secundaria.bin", ios::binary);
+    archivoEntrada.read(reinterpret_cast<char*>(arreglo_original), 1000 * sizeof(int));
+    archivoEntrada.close();
+
+    // Muestra de primeros y últimos 5 elementos del arreglo inicial antes del traslado
+    cout << "=== ARREGLO INICIAL (Memoria Secundaria a RAM) ===" << endl;
+    cout << "Primeros 5 elementos: ";
+    for (int i = 0; i < 5; i++) cout << arreglo_original[i] << " ";
+    cout << "\nÚltimos 5 elementos: ";
+    for (int i = 995; i < 1000; i++) cout << arreglo_original[i] << " ";
+    cout << "\n\n";
+
+    // 2. Transferir 100 elementos (índices 500 al 599) al segundo arreglo usando memcpy
+    int arreglo_destino[100];
+    memcpy(arreglo_destino, &arreglo_original[500], 100 * sizeof(int));
+
+    // Limpiar los valores transferidos en el arreglo original estableciéndolos a 0 usando memset
+    memset(&arreglo_original[500], 0, 100 * sizeof(int));
+
+    // 3. Salidas por consola requeridas
+    cout << "=== 100 ELEMENTOS TRANSFERIDOS AL SEGUNDO ARREGLO ===" << endl;
+    for (int i = 0; i < 100; i++) {
+        cout << arreglo_destino[i] << " ";
+        if ((i + 1) % 10 == 0) cout << endl; // Formato de 10 por línea
+    }
+    cout << endl;
+
+    // Validación de que los índices 500 al 599 del primer arreglo contengan ceros
+    cout << "=== VALIDACIÓN: ÍNDICES 500 AL 599 EN ARREGLO ORIGINAL ===" << endl;
+    bool es_correcto = true;
+    for (int i = 500; i <= 599; i++) {
+        if (arreglo_original[i] != 0) {
+            es_correcto = false;
+            break;
+        }
+    }
+
+    if (es_correcto) {
+        cout << "Estado: ÉXITO. Todos los elementos del rango 500-599 fueron limpiados a 0 correctamente." << endl;
+    } else {
+        cout << "Estado: ERROR. Se encontraron valores distintos de 0 en el rango especificado." << endl;
+    }
+
+    return 0;
+}
