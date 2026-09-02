@@ -1,0 +1,19 @@
+.global _start
+
+.section .data
+    arreglo: .long 10, 20, 30, 40, 50   # Arreglo de 5 enteros (4 bytes c/u) en RAM
+
+.section .text
+_start:
+    lea arreglo, %rbx       # Carga la dirección base del arreglo en %rbx
+    
+    movl 0(%rbx), %eax      # eax = arreglo[0]
+    addl 4(%rbx), %eax      # eax += arreglo[1]
+    addl 8(%rbx), %eax      # eax += arreglo[2]
+    addl 12(%rbx), %eax     # eax += arreglo[3]
+    addl 16(%rbx), %eax     # eax += arreglo[4]
+
+    # Salida del sistema (exit) con el resultado en %edi
+    movl %eax, %edi         # Pasa la suma (150) como código de retorno
+    movl $60, %eax          # Syscall para exit en Linux x86_64
+    syscall
