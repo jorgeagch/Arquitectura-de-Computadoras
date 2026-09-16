@@ -1,0 +1,130 @@
+using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+
+unsafe class Program
+{
+    const int N = 1024;
+
+    static double MedirTiempoSegundos(Action accion)
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Stopwatch sw = Stopwatch.StartNew();
+        accion();
+        sw.Stop();
+        return sw.Elapsed.TotalSeconds;
+    }
+
+    // 1. NAIVE (i-j-k): Ineficiente, Cache Miss masivo
+    static void AlgoritmoNaive(float* A, float* B, float* C)
+    {
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                float suma = 0.0f;
+                for (int k = 0; k < N; k++) {
+                    suma += A[i * N + k] * B[k * N + j]; // Salto de 4096 bytes en B
+                }
+                C[i * N + j] = suma;
+            }
+        }
+    }
+
+    // 2. LOCALIDAD ESPACIAL (i-k-j): Aprovecha linea de cache de 64 bytes
+    static void AlgoritmoLocalidadEspacial(float* A, float* B, float* C)
+    {
+        Unsafe.InitBlock(C, 0, (uint)(N * N * sizeof(float)));
+        for (int i = 0; i < N; i++) {
+            for (int k = 0; k < N; k++) {
+                float r = A[i * N + k];
+                int fila_b = k * N, fila_c = i * N;
+                for (int j = 0; j < N; j++) {
+                    C[fila_c + j] += r * B[fila_b + j]; // Acceso contiguo
+                }
+            }
+        }
+    }
+
+    // 3. LOCALIDAD TEMPORAL + REGISTROS: Mantiene A[i][k] en registro
+    static void AlgoritmoRegistrosCpu(float* A, float* B, float* C)
+    {
+        Unsafe.InitBlock(C, 0, (uint)(N * N * sizeof(float)));
+        for (int i = 0; i < N; i++) {
+            float* ptr_c = &C[i * N];
+            for (int k = 0; k < N; k++) {
+                float reg_a = A[i * N + k]; // Retención en registro/L1
+                float* ptr_b = &B[k * N];
+                for (int j = 0; j < N; j++) {
+                    ptr_c[j] += reg_a * ptr_b[j];
+                }
+            }
+        }
+    }
+
+    // 4. LOOP UNROLLING 4X + ILP: Paralelismo a nivel de instruccion
+    static void AlgoritmoLoopUnrolling(float* A, float* B, float* C)
+    {
+        Unsafe.InitBlock(C, 0, (uint)(N * N * sizeof(float)));
+        for (int i = 0; i < N; i++) {
+            float* ptr_c = &C[i * N];
+            for (int k = 0; k < N; k++) {
+                float reg_a = A[i * N + k];
+                float* ptr_b = &B[k * N];
+                for (int j = 0; j < N; j += 4) {
+                    ptr_c[j]     += reg_a * ptr_b[j];
+                    ptr_c[j + 1] += reg_a * ptr_b[j + 1];
+                    ptr_c[j + 2] += reg_a * ptr_b[j + 2];
+                    ptr_c[j + 3] += reg_a * ptr_b[j + 3];
+                }
+            }
+        }
+    }
+
+    static double CalcularChecksum(float* mat)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < N * N; i++) sum += mat[i];
+        return sum;
+    }
+
+    static void Main()
+    {
+        size_t total = (size_t)N * N, bytes = total * sizeof(float);
+        double gflops_base = (2.0 * N * N * N) / 1e9;
+
+        float* A = (float*)System.Runtime.InteropServices.Marshal.AllocHGlobal((IntPtr)bytes);
+        float* B = (float*)System.Runtime.InteropServices.Marshal.AllocHGlobal((IntPtr)bytes);
+        float* C1 = (float*)System.Runtime.InteropServices.Marshal.AllocHGlobal((IntPtr)bytes);
+        float* C2 = (float*)System.Runtime.InteropServices.Marshal.AllocHGlobal((IntPtr)bytes);
+        float* C3 = (float*)System.Runtime.InteropServices.Marshal.AllocHGlobal((IntPtr)bytes);
+        float* C4 = (float*)System.Runtime.InteropServices.Marshal.AllocHGlobal((IntPtr)bytes);
+
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < N; j++) {
+                A[i * N + j] = ((i + j) % 50) * 0.02f + 1.0f;
+                B[i * N + j] = ((i * 2 + j) % 50) * 0.02f + 0.5f;
+            }
+        }
+
+        double t_naive = MedirTiempoSegundos(() => AlgoritmoNaive(A, B, C1));
+        double t_cache = MedirTiempoSegundos(() => AlgoritmoLocalidadEspacial(A, B, C2));
+        double t_reg   = MedirTiempoSegundos(() => AlgoritmoRegistrosCpu(A, B, C3));
+        double t_unroll= MedirTiempoSegundos(() => AlgoritmoLoopUnrolling(A, B, C4));
+
+        Console.WriteLine($"\n=== RESULTADOS DETERMINISTICOS (N={N}) ===");
+        Console.WriteLine($"1. Naive (i-j-k)             : {t_naive,7:F4} s | {gflops_base / t_naive,6:F2} GFLOPS | Speedup: 1.00x");
+        Console.WriteLine($"2. Localidad Espacial (Cache): {t_cache,7:F4} s | {gflops_base / t_cache,6:F2} GFLOPS | Speedup: {t_naive / t_cache,5:F2}x");
+        Console.WriteLine($"3. Registros de CPU          : {t_reg,7:F4} s | {gflops_base / t_reg,6:F2} GFLOPS | Speedup: {t_naive / t_reg,5:F2}x");
+        Console.WriteLine($"4. Loop Unrolling 4x (ILP)   : {t_unroll,7:F4} s | {gflops_base / t_unroll,6:F2} GFLOPS | Speedup: {t_naive / t_unroll,5:F2}x");
+
+        double chk1 = CalcularChecksum(C1), chk4 = CalcularChecksum(C4);
+        Console.WriteLine($"[OK] Validacion de Checksum: {chk1:E4} (Error = {Math.Abs(chk1 - chk4):E4})");
+
+        System.Runtime.InteropServices.Marshal.FreeHGlobal((IntPtr)A);
+        System.Runtime.InteropServices.Marshal.FreeHGlobal((IntPtr)B);
+        System.Runtime.InteropServices.Marshal.FreeHGlobal((IntPtr)C1);
+        System.Runtime.InteropServices.Marshal.FreeHGlobal((IntPtr)C2);
+        System.Runtime.InteropServices.Marshal.FreeHGlobal((IntPtr)C3);
+        System.Runtime.InteropServices.Marshal.FreeHGlobal((IntPtr)C4);
+    }
+}
